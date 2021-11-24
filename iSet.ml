@@ -7,77 +7,86 @@ type przedzial = int*int
 
 type t =
     |Empty
-    |Node of t * przedzial * t * int
+    |Node of t * przedzial * t * int * int
 ;;
 
 (* FUNKCJE POMOCNICZE *)
 
-let rec fold_tree f a t = 
-    match t with
-        |Empty -> a
-        |Node (l, k, r,_) -> f k (fold_tree f a l) (fold_tree f a r);;
+let rec cmp x y =
+    if fst x > fst y then -cmp y x
+    else if snd x >= fst y then 0
+    else if snd x = (fst y)-1 then -1
+    else -2
+;;
 
-let in_przedzial x ((a,b):przedzial) =
+let in_range x ((a,b):przedzial) =
     if x>=a && x<=b then
         true
     else
         false
 ;;
 
+let get_sum t = 
+    match t with
+        |Empty -> 0
+        |Node(_,_,_,_,s) -> s
+;;
+
+(* Wysokość drzewa *)
 let height = function
-    |Node (_, _, _, h) -> h
+    |Node (_, _, _, h, _) -> h
     |Empty -> 0
 ;;
 
-let make l (k:przedzial) r = Node (l, k, r, max (height l) (height r) + 1)
+let make l (k:przedzial) r = Node (l, k, r, max (height l) (height r) + 1, (snd k - fst k + 1 + (get_sum l) + (get_sum r) ))
 
 let bal l k r =
   let hl = height l in
   let hr = height r in
   if hl > hr + 2 then
     match l with
-        |Node (ll, lk, lr, _) ->
+        |Node (ll, lk, lr, _, _) ->
         if height ll >= height lr then make ll lk (make lr k r)
         else
           (match lr with
-            |Node (lrl, lrk, lrr, _) ->
+            |Node (lrl, lrk, lrr, _, _) ->
               make (make ll lk lrl) lrk (make lrr k r)
             |Empty -> assert false)
         |Empty -> assert false
   else if hr > hl + 2 then
     match r with
-        |Node (rl, rk, rr, _) ->
+        |Node (rl, rk, rr, _, _) ->
         if height rr >= height rl then make (make l k rl) rk rr
         else
           (match rl with
-            |Node (rll, rlk, rlr, _) ->
+            |Node (rll, rlk, rlr, _, _) ->
               make (make l k rll) rlk (make rlr rk rr)
             |Empty -> assert false)
         |Empty -> assert false
-  else Node (l, k, r, max hl hr + 1)
+  else make l k r
 ;;
 
 let rec add_min_element k = function
-        |Empty -> Node(Empty, k, Empty, 1)
-        |Node (l, x, r, h) ->
+        |Empty -> make Empty k Empty
+        |Node (l, x, r, _, _) ->
             bal (add_min_element k l) x r
 ;;
 
 let rec add_max_element k = function
-        |Empty -> Node(Empty, k, Empty, 1)
-        |Node (l, x, r, h) ->
+        |Empty -> make Empty k Empty
+        |Node (l, x, r, _, _) ->
             bal l x (add_max_element k r)
 ;;
 
 let rec min_elt = function
-    |Node (Empty, k, _, _) -> k
-    |Node (l, _, _, _) -> min_elt l
+    |Node (Empty, k, _, _, _) -> k
+    |Node (l, _, _, _, _) -> min_elt l
     |Empty -> raise Not_found
 ;;
 
 let rec remove_min_elt = function
-    |Node (Empty, _, r, _) -> r
-    |Node (l, k, r, _) -> bal (remove_min_elt l) k r
+    |Node (Empty, _, r, _, _) -> r
+    |Node (l, k, r, _, _) -> bal (remove_min_elt l) k r
     |Empty -> invalid_arg "PSet.remove_min_elt"
 ;;
 
@@ -85,7 +94,7 @@ let rec join l v r =
     match (l, r) with
     (Empty, _) -> add_min_element v r
     |(_, Empty) -> add_max_element v l
-    |(Node(ll, lv, lr, lh), Node(rl, rv, rr, rh)) ->
+    |(Node(ll, lv, lr, lh,_), Node(rl, rv, rr, rh,_)) ->
         if lh > rh + 2 then bal ll lv (join lr v r) else
         if rh > lh + 2 then bal (join l v rl) rv rr else
         make l v r
@@ -98,19 +107,18 @@ let concat t1 t2 =
         |(_, _) -> join t1 (min_elt t2) (remove_min_elt t2)
 ;;
 
-let rec split2 x t = (* do funkcji add *)
+let split2 x t dg= (* do funkcji add i remove*)
+    let rec loop x t =
     match t with
-        |Empty -> (Empty, (x,x), Empty)
-        |Node(l, k, r, h) ->
-            if in_przedzial x k then 
-                if fst k = x && snd k = x then (l, k, r)
-                else if fst k = x || fst k = x+1 || fst k = x-1 then (l, k, (Node(Empty, k, r, h)))
-                else if snd k = x || snd k = x-1 || snd k = x+1 then ((Node(l, k, Empty, h)), k, r)
-                else ((Node(l, k, Empty, h)), k, (Node(Empty, k, r, h)))
-            else if x <= fst k then
-                let (ll, prev, rl) = split2 x l in (ll, prev, join rl k r)
+        |Empty -> (Empty, x, Empty)
+        |Node(l, k, r, _, _) ->
+            let path = cmp x k in 
+            if in_range path dg then (l,k,r)
+            else if path < 0 then
+                let (ll, pres, rl) = loop x l in (ll, pres, join rl k r)
             else
-                let (lr, prev, rr) = split2 x r in (join l k lr, prev, rr)
+                let (lr, pres, rr) = loop x r in (join l k lr, pres, rr)
+    in loop x t
 ;;
 
 (* FUNKCJE PROGRAMU *)
@@ -121,44 +129,46 @@ let is_empty t = t = Empty;;
 
 let rec add_one ((x,y):przedzial) t = 
     match t with
-        |Node (l, k, r, h) ->
-            if fst k = x && snd k = y then Node (l, (x,y), r, h)
+        |Node (l, k, r, h, _) ->
+            if fst k = x && snd k = y then make l (x,y) r
             else if y <= fst k then
                 let nl = add_one (x,y) l in
                 bal nl k r
             else
             let nr = add_one (x,y) r in
             bal l k nr
-        |Empty -> Node (Empty, (x,y), Empty, 1)
+        |Empty -> make Empty (x,y) Empty
 ;;
 
 let add ((x,y):przedzial) t = 
-    let (l,(a,_),_) = split2 x t and (_,(_,b),r) = split2 y t in
-    add_one (a,b) (concat l r) 
+    let (l,(a,_),_) = split2 (x,x) t (0,1) and (_,(_,b),r) = split2 (y,y) t (-1,0) in
+    add_one (a,b) (concat l r)
 ;;
-
-let remove ((x,y):przedzial) t = t;;
 
 let rec split x t = 
     match t with
         |Empty -> (Empty, false, Empty)
-        |Node(l, k, r, h) ->
-            if in_przedzial x k then 
+        |Node(l, k, r, h, _) ->
+            if in_range x k then 
                 if fst k = x && snd k = x then (l, true, r)
-                else if fst k = x then (l, true, (Node(Empty, ((fst k)+1, snd k), r, h)))
-                else if snd k = x then ((Node(l, (fst k, (snd k)-1), Empty, h)), true, r)
-                else ((Node(l,(fst k,(snd k)-1),Empty,h)), true, (Node(Empty,((fst k)+1,snd k),r,h)))
+                else if fst k = x then (l, true, (make Empty (x+1, snd k) r))
+                else if snd k = x then ((make l (fst k, x-1) Empty), true, r)
+                else ((make l (fst k, x-1) Empty), true, (make Empty (x+1, snd k) r))
             else if x <= fst k then
                 let (ll, pres, rl) = split x l in (ll, pres, join rl k r)
             else
                 let (lr, pres, rr) = split x r in (join l k lr, pres, rr)
 ;;
 
+let remove ((x,y):przedzial) t = let (l,_,_) = split x t and (_,_,r) = split y t in
+    concat l r;;
+
+(* z pliku pSet.ml *)
 let mem x t =
   let rec helper t = 
     match t with
-        |Node (l, k, r, _) ->
-            if in_przedzial x k then
+        |Node (l, k, r, _, _) ->
+            if in_range x k then
             true
             else
             (helper l) || (helper r)
@@ -166,26 +176,53 @@ let mem x t =
   in helper t
 ;;
 
+(* z pliku pSet.ml *)
 let iter f t =
   let rec loop = function
     |Empty -> ()
-    |Node (l, k, r, _) -> loop l; f k; loop r 
+    |Node (l, k, r, _, _) -> loop l; f k; loop r 
   in loop t
 ;;
 
+(* z pliku pSet.ml *)
 let fold f t acc =
   let rec loop acc = function
     |Empty -> acc
-    |Node (l, k, r, _) ->
+    |Node (l, k, r, _, _) ->
           loop (f k (loop acc l)) r 
   in loop acc t
 ;;
 
+(* z pliku pSet.ml *)
 let elements t = 
   let rec loop acc = function
     Empty -> acc
-    |Node(l, k, r, _) -> loop (k :: loop acc r) l 
+    |Node(l, k, r, _, _) -> loop (k :: loop acc r) l 
   in loop [] t
 ;;
 
-let below x t = 1;;
+let below x t = 
+    let rec loop t acc =
+        match t with
+            |Empty -> acc
+            |Node(l,k,r,_,s) ->
+            if in_range x k then 
+                if s<=0 then
+                    if fst k = min_int then x - (fst k) +1
+                    else max_int
+                else ( acc + (get_sum l) + x-(fst k) + 1)
+            else if x>snd k then loop r (acc + (get_sum l) + (snd k) - (fst k) +1)
+            else loop l acc
+    in loop t 0
+;;
+let c = empty;;
+let c = add (4, max_int) c;;
+let c = add (min_int, 0) c;;
+
+let d = empty;;
+let d = add (min_int, max_int) d;;
+
+below 0 c;;
+below (-2) c;;
+below min_int c;;
+below (min_int+1) c;;
