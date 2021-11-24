@@ -3,15 +3,30 @@
     Code review: 
 *)
 
+
+(* zdefiniowany przedział *)
 type przedzial = int*int
 
+(* zdefiniowane drzewo jako 
+    (
+    lewe poddrzewo; 
+    przedział;
+    prawe poddrzewo;
+    wysokośc;
+    suma elementów w poddrzewie i w wierzchołku;
+    ) *)
 type t =
     |Empty
     |Node of t * przedzial * t * int * int
 ;;
 
-(* FUNKCJE POMOCNICZE *)
+(* #### FUNKCJE POMOCNICZE #### *)
 
+(* funkcja do sprawdzania czy zbiory będą się łączyć:
+    0 gdy nachodzą na siebie
+    -1,1 gdy sąsiadują ze sobą
+    -2,2 gdy są odległe
+ *)
 let rec cmp x y =
     if fst x > fst y then -cmp y x
     else if snd x >= fst y then 0
@@ -19,6 +34,7 @@ let rec cmp x y =
     else -2
 ;;
 
+(* spradzenie czy x należy do zbioru (a,b) *)
 let in_range x ((a,b):przedzial) =
     if x>=a && x<=b then
         true
@@ -26,20 +42,23 @@ let in_range x ((a,b):przedzial) =
         false
 ;;
 
+(* otrzymywanie suma elementów w poddrzewie i w wierzchołku *)
 let get_sum t = 
     match t with
         |Empty -> 0
         |Node(_,_,_,_,s) -> s
 ;;
 
-(* Wysokość drzewa *)
+(* otrzymywanie wysokości drzewa *) (* z pliku pSet.ml *)
 let height = function
     |Node (_, _, _, h, _) -> h
     |Empty -> 0
 ;;
 
+(* tworzenie drzewa *) (* z pliku pSet.ml *)
 let make l (k:przedzial) r = Node (l, k, r, max (height l) (height r) + 1, (snd k - fst k + 1 + (get_sum l) + (get_sum r) ))
 
+(* funkcja balansująca *) (* z pliku pSet.ml *)
 let bal l k r =
   let hl = height l in
   let hr = height r in
@@ -66,30 +85,35 @@ let bal l k r =
   else make l k r
 ;;
 
+(* z pliku pSet.ml *)
 let rec add_min_element k = function
         |Empty -> make Empty k Empty
         |Node (l, x, r, _, _) ->
             bal (add_min_element k l) x r
 ;;
 
+(* z pliku pSet.ml *)
 let rec add_max_element k = function
         |Empty -> make Empty k Empty
         |Node (l, x, r, _, _) ->
             bal l x (add_max_element k r)
 ;;
 
+(* z pliku pSet.ml *)
 let rec min_elt = function
     |Node (Empty, k, _, _, _) -> k
     |Node (l, _, _, _, _) -> min_elt l
     |Empty -> raise Not_found
 ;;
 
+(* z pliku pSet.ml *)
 let rec remove_min_elt = function
     |Node (Empty, _, r, _, _) -> r
     |Node (l, k, r, _, _) -> bal (remove_min_elt l) k r
     |Empty -> invalid_arg "PSet.remove_min_elt"
 ;;
 
+(* z pliku pSet.ml *)
 let rec join l v r =
     match (l, r) with
     (Empty, _) -> add_min_element v r
@@ -100,6 +124,7 @@ let rec join l v r =
         make l v r
 ;;
 
+(* z pliku pSet.ml *) (* mergowanie dwóch drzew *)
 let concat t1 t2 =
     match (t1, t2) with
         |(Empty, t) -> t
@@ -107,6 +132,11 @@ let concat t1 t2 =
         |(_, _) -> join t1 (min_elt t2) (remove_min_elt t2)
 ;;
 
+(* 
+    funkcja pomocnicza do sumowania przedziałów w drzewie
+    wykonywana najpierw dla mniejsze liczby z wstawianego przedziału,
+    a potem dla większej
+ *)
 let split2 x t dg= (* do funkcji add i remove*)
     let rec loop x t =
     match t with
@@ -127,6 +157,7 @@ let empty = Empty;;
 
 let is_empty t = t = Empty;; 
 
+(* dodawanie przedziału do drzewa gdzie nie łączy się ten przedział *)
 let rec add_one ((x,y):przedzial) t = 
     match t with
         |Node (l, k, r, h, _) ->
@@ -140,10 +171,12 @@ let rec add_one ((x,y):przedzial) t =
         |Empty -> make Empty (x,y) Empty
 ;;
 
+(* dodawanie przedziału do drzewa, najpierw tworzone jest nowe drzewo gdzie można bez problemowo dodać nowy przedział *)
 let add ((x,y):przedzial) t = 
     let (l,(a,_),_) = split2 (x,x) t (0,1) and (_,(_,b),r) = split2 (y,y) t (-1,0) in
     add_one (a,b) (concat l r)
 ;;
+
 
 let rec split x t = 
     match t with
@@ -160,6 +193,7 @@ let rec split x t =
                 let (lr, pres, rr) = split x r in (join l k lr, pres, rr)
 ;;
 
+(* z pliku pSet.ml *)
 let remove ((x,y):przedzial) t = let (l,_,_) = split x t and (_,_,r) = split y t in
     concat l r;;
 
@@ -201,28 +235,15 @@ let elements t =
   in loop [] t
 ;;
 
+(* funkcja sprawdzająca ile elementów drzewa jest mniejsze od danej liczby *)
 let below x t = 
     let rec loop t acc =
         match t with
-            |Empty -> acc
+            |Empty -> if acc < 0 then max_int else acc
             |Node(l,k,r,_,s) ->
-            if in_range x k then 
-                if s<=0 then
-                    if fst k = min_int then x - (fst k) +1
-                    else max_int
-                else ( acc + (get_sum l) + x-(fst k) + 1)
-            else if x>snd k then loop r (acc + (get_sum l) + (snd k) - (fst k) +1)
-            else loop l acc
+            if x < fst k then loop l acc
+            else if x > snd k then loop r (acc + (get_sum l) + snd k - fst k +1)
+            else let check = acc + (get_sum l) + x - fst k +1 in
+            if check <=0 then max_int else check
     in loop t 0
 ;;
-let c = empty;;
-let c = add (4, max_int) c;;
-let c = add (min_int, 0) c;;
-
-let d = empty;;
-let d = add (min_int, max_int) d;;
-
-below 0 c;;
-below (-2) c;;
-below min_int c;;
-below (min_int+1) c;;
