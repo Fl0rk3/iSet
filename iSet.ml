@@ -1,6 +1,6 @@
 (*
     Autor: Florian Ficek
-    Code review: 
+    Code review: Jan Szot
 *)
 
 
